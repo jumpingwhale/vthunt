@@ -1,0 +1,19 @@
+virustotal:
+    api: MY_VIRUSTOTAL_API_KEY
+    ruleset_name: HUNTING_RULE_NAME
+mysql:
+    host: db.mydomain.com
+    port: 3306
+    database: my_scheme
+    user: user01
+    passwd: 'my_password'
+sftp:
+    host: sftp.mydomain.com
+    port: 22
+    user: user01
+    passwd: 'my_password'
+log:
+    logname: mylog
+    loglevel: 20
+    apikey: MY_TELEGRAM_BOT_API_KEY
+
