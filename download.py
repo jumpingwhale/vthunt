@@ -31,7 +31,7 @@ def work(config):
     logger = logging.getLogger(config['log']['logname'])
 
     # SFTP 접속
-    conn_sftp(config['SFTP'])
+    sftp = conn_sftp(config['sftp'])
 
     while True:
         time.sleep(5)
@@ -58,7 +58,7 @@ def work(config):
                         continue
 
                     # 저장및 저장위치 리턴
-                    path = store(md5, res.content)
+                    path = store_sftp(sftp, md5, res.content)
                     if path:
                         path = path.replace('\\', '/')  # 저장경로 linux_path 로 변환
                     else:
