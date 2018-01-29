@@ -14,154 +14,141 @@ import requests
 import pymysql
 import paramiko
 import yaml
-import sqls
+
+# virustotal.hunt 엔 있고, depot 엔 저장되지 않은(depot.path == NULL) 샘플들만 다운로드 받는다
+SELECT_SAMPLES_NOT_STORED = 'SELECT  JSON_UNQUOTE(JSON_EXTRACT(virustotal.hunt, "$.md5")), depot.path ' \
+                            'FROM virustotal INNER JOIN depot ' \
+                            'ON virustotal.md5 = depot.md5 AND depot.path IS NULL ' \
+                            'LIMIT 10'
+
+UPDATE_PATH = 'UPDATE depot SET path=%s WHERE md5=%s'
 
 
-def work(config):
-    # DB 접속
-    conn = pymysql.connect(
-        host=config['mysql']['host'],
-        port=config['mysql']['port'],
-        database=config['mysql']['database'],
-        user=config['mysql']['user'],
-        passwd=config['mysql']['passwd'], )
-    cur = conn.cursor()
+class VTDownloader:
 
-    # 로거 설정
-    logger = logging.getLogger(config['log']['logname'])
-
-    # SFTP 접속
-    sftp = conn_sftp(config['sftp'])
-
-    while True:
-        time.sleep(5)
-
-        # 미다운로드 샘플 확인 (path 가 NULL 이면 미다운로드로 간주)
-        sql = sqls.SELECT_SAMPLES_NOT_STORED
+    def __init__(self, config):
+        self.logger = logging.getLogger(config['log']['logname'])
+        self.config = config
+        self.conn = None
+        self.cur = None
+        self.sftp = None
         try:
-            cur.execute(sql)
-        except Exception as e:
-            logger.critical(str(e))
-            continue
-        else:
-            if cur.rowcount:
-                # 미다운로드 md5 확보
-                md5s = [row[0].lower().replace('"', '') for row in cur.fetchall()]
-                # 각각 다운로드
-                for md5 in md5s:
-                    url_download = 'https://www.virustotal.com/intelligence/download/?hash=%s&apikey=%s' % \
-                          (md5, config['virustotal']['api'])
-                    try:
-                        res = requests.post(url_download)
-                    except Exception as e:
-                        logger.critical(str(e))
-                        continue
-
-                    # 저장및 저장위치 리턴
-                    path = store_sftp(sftp, md5, res.content)
-                    if path:
-                        path = path.replace('\\', '/')  # 저장경로 linux_path 로 변환
-                    else:
-                        continue
-
-                    try:
-                        cur.execute(sqls.UPDATE_PATH, (path, md5))  # DB에 저장경로 업데이트
-                        conn.commit()
-                    except Exception as e:
-                        logger.critical(str(e))
-                        continue
-                    else:
-                        logger.info('stored \'%s\'' % md5)
-
-
-def store(md5, binary):
-    root = 'md5'
-    prefixes = [md5[:2], md5[2:4]]
-
-    # 디렉토리 생성
-    if not os.path.exists(os.path.join(root, *prefixes)):  # '*' makes list to pointer?
-        storepath = root
-        for prefix in prefixes:
-            storepath = os.path.join(storepath, prefix)
-            try:
-                os.mkdir(storepath)  # MD5 해쉬값, 두 글자단위, 2 depth 로 폴더생성
-            except FileExistsError:
-                pass
-    # 파일저장
-    with open(os.path.join(root, *prefixes, md5), 'wb') as fp:
-        fp.write(binary)
-
-    return os.path.join(root, *prefixes, md5)
-
-
-def store_sftp(sftp, md5, binary):
-    def exists(path):
-        try:
-            sftp.stat(path)
-        except IOError as e:
-            if e.errno == errno.ENOENT:
-                return False
+            self.conn = pymysql.connect(
+                host=config['mysql']['host'],
+                port=config['mysql']['port'],
+                database=config['mysql']['database'],
+                user=config['mysql']['user'],
+                passwd=config['mysql']['passwd'],
+            )
+            self.cur = self.conn.cursor()
+        except Exception:
+            self.logger.critical('MySql connection error')
             raise
-        else:
-            return True
 
-    root = 'md5'
-    prefixes = [md5[:2], md5[2:4]]
-    remote_dir = '/'.join([root, ] + prefixes)
-    remote_path = '/'.join([remote_dir, md5])
+        try:
+            self.sftp = self.__conn_sftp(config['sftp'])
+        except Exception:
+            self.logger.critical('SFTP connection error')
+            raise
 
-    if not exists(remote_dir):
-        path_to_remote_dir = root
-        for prefix in prefixes:
-            path_to_remote_dir = '/'.join([path_to_remote_dir, prefix])
+    def __conn_sftp(self, config):
+        host = config['host']
+        port = config['port']
+        user = config['user']
+        passwd = config['passwd']
+
+        sock = (host, port)
+
+        t = paramiko.Transport(sock)
+
+        # Transport 로 서버 접속
+        t.connect(username=user, password=passwd)
+
+        # 클라이언트 초기화
+        sftp = paramiko.SFTPClient.from_transport(t)
+
+        return sftp
+
+    def __store_sftp(self, md5, binary):
+        def exists(path):
             try:
-                sftp.mkdir(path_to_remote_dir)  # MD5 해쉬값, 두 글자단위, 2 depth 로 폴더생성
-            except Exception:
-                pass
+                self.sftp.stat(path)
+            except IOError as e:
+                if e.errno == errno.ENOENT:
+                    return False
+                else:
+                    raise
+            else:
+                return True
 
-    fp = io.BytesIO(binary)
-    try:
-        sftp.putfo(fp, remote_path)
-    except Exception:
-        return False
-    else:
+        root = 'md5'
+        prefixes = [md5[:2], md5[2:4]]
+        remote_dir = '/'.join([root, ] + prefixes)
+        remote_path = '/'.join([remote_dir, md5])
+
+        # 폴더 없으면 생성
+        if not exists(remote_dir):
+            path_to_remote_dir = root
+            for prefix in prefixes:
+                path_to_remote_dir = '/'.join([path_to_remote_dir, prefix])
+                self.sftp.mkdir(path_to_remote_dir)  # MD5 해쉬값, 두 글자단위, 2 depth 로 폴더생성
+
+        # 이미 파일 있으면 삭제
+        if exists(remote_path):
+            self.sftp.remove(remote_path)
+
+        fp = io.BytesIO(binary)
+        self.sftp.putfo(fp, remote_path)
         return remote_path
 
+    def work(self):
 
-def conn_sftp(config):
-    host = config['host']
-    port = config['port']
-    user = config['user']
-    passwd = config['passwd']
+        while True:
+            time.sleep(5)
 
-    ret = False
-    sock = (host, port)
-
-    try:
-        t = paramiko.Transport(sock)
-    except paramiko.SSHException as e:
-        print(str(e))
-    else:
-        # Transport 로 서버 접속
-        try:
-            t.connect(username=user, password=passwd)
-        except paramiko.SFTPError as e:
-            print(str(e))
-        except paramiko.SSHException as e:
-            print(str(e))
-        else:
-            # 클라이언트 초기화
             try:
-                sftp = paramiko.SFTPClient.from_transport(t)
-            except paramiko.SFTPError as e:
-                print(str(e))
+                # 미다운로드 샘플 확인 (path 가 NULL 이면 미다운로드로 간주)
+                sql = SELECT_SAMPLES_NOT_STORED
+                self.cur.execute(sql)
+            except Exception as e:
+                self.logger.critical(str(e))
+                raise
             else:
-                ret = sftp
-    return ret
+                if self.cur.rowcount:
+                    self.logger.info('%d samples queued' % self.cur.rowcount)
+
+                    # 미다운로드 md5 확보
+                    md5s = [row[0].lower() for row in self.cur.fetchall()]
+
+                    # 각각 다운로드
+                    for md5 in md5s:
+                        url_download = 'https://www.virustotal.com/intelligence/download/?hash=%s&apikey=%s' % \
+                              (md5, config['virustotal']['api'])
+                        try:
+                            res = requests.post(url_download)
+                        except Exception as e:
+                            self.logger.critical(str(e))
+                            raise
+
+                        # 서버저장 및 서버 저장위치 리턴
+                        path = self.__store_sftp(md5, res.content)
+                        if path:
+                            path = path.replace('\\', '/')  # 저장경로 linux_path 로 변환
+                        else:
+                            self.logger.critical('failed to store SFTP')
+                            raise IOError
+
+                        try:
+                            self.cur.execute(UPDATE_PATH, (path, md5))  # DB에 저장경로 업데이트
+                            self.conn.commit()
+                        except Exception as e:
+                            self.logger.critical(str(e))
+                            raise
+                        else:
+                            self.logger.info('stored \'%s\'' % md5)
 
 
 if __name__ == '__main__':
-    """test code"""
     try:
         with open("config_master.yml", 'r') as ymlfile:
             config = yaml.load(ymlfile)
@@ -169,6 +156,17 @@ if __name__ == '__main__':
         with open("config.yml", 'r') as ymlfile:
             config = yaml.load(ymlfile)
 
-    sftp = conn_sftp(config['sftp'])
-    if sftp:
-        store_sftp(sftp, '00000000000000000000000000000000', b'111')
+    while True:
+        try:
+            # 예외시 재접속
+            vt = VTDownloader(config)
+        except Exception as e:
+            time.sleep(10)
+            continue
+        else:
+            try:
+                # 작업시작
+                vt.work()
+            except Exception as e:
+                time.sleep(10)
+                continue
