@@ -9,6 +9,7 @@ import os
 import io
 import errno
 import time
+import datetime
 import logging
 from logging.handlers import RotatingFileHandler
 import requests
@@ -16,11 +17,12 @@ import pymysql
 import paramiko
 import yaml
 
+
 # virustotal.hunt 엔 있고, depot 엔 저장되지 않은(depot.path == NULL) 샘플들만 다운로드 받는다
 SELECT_SAMPLES_NOT_STORED = 'SELECT  JSON_UNQUOTE(JSON_EXTRACT(virustotal.hunt, "$.md5")), depot.path ' \
                             'FROM virustotal INNER JOIN depot ' \
                             'ON virustotal.md5 = depot.md5 AND depot.path IS NULL ' \
-                            'LIMIT 10'
+                            'LIMIT 100'
 
 UPDATE_PATH = 'UPDATE depot SET path=%s WHERE md5=%s'
 
@@ -30,6 +32,7 @@ class VTDownloader:
     def __init__(self, config):
         self.config = config
         self.logger = self.__setup_log(config['log'])
+        self.trigger = False
         self.conn = None
         self.cur = None
         self.sftp = None
@@ -107,7 +110,10 @@ class VTDownloader:
             path_to_remote_dir = root
             for prefix in prefixes:
                 path_to_remote_dir = '/'.join([path_to_remote_dir, prefix])
-                self.sftp.mkdir(path_to_remote_dir)  # MD5 해쉬값, 두 글자단위, 2 depth 로 폴더생성
+                try:
+                    self.sftp.mkdir(path_to_remote_dir)  # MD5 해쉬값, 두 글자단위, 2 depth 로 폴더생성
+                except Exception:
+                    pass
 
         # 이미 파일 있으면 삭제
         if exists(remote_path):
@@ -120,48 +126,55 @@ class VTDownloader:
     def work(self):
 
         while True:
-            time.sleep(5)
+            # 20시 이후에만 다운로드하자
+            currtime = datetime.datetime.time(datetime.datetime.now())
+            starttime = datetime.time(20, 0, 0, 0)
+            endtime = datetime.time(23, 59, 0, 0)
+            self.trigger = starttime < currtime < endtime
 
-            try:
-                # 미다운로드 샘플 확인 (path 가 NULL 이면 미다운로드로 간주)
-                sql = SELECT_SAMPLES_NOT_STORED
-                self.cur.execute(sql)
-            except Exception as e:
-                self.logger.critical(str(e))
-                raise
-            else:
-                if self.cur.rowcount:
-                    self.logger.info('%d samples queued' % self.cur.rowcount)
+            if self.trigger:
+                time.sleep(15)
+                try:
+                    # 미다운로드 샘플 확인 (path 가 NULL 이면 미다운로드로 간주)
+                    sql = SELECT_SAMPLES_NOT_STORED
+                    self.cur.execute(sql)
+                except Exception as e:
+                    self.logger.critical(str(e))
+                    raise
+                else:
+                    if self.cur.rowcount:
 
-                    # 미다운로드 md5 확보
-                    md5s = [row[0].lower() for row in self.cur.fetchall()]
+                        # 미다운로드 md5 확보
+                        md5s = [row[0].lower() for row in self.cur.fetchall()]
 
-                    # 각각 다운로드
-                    for md5 in md5s:
-                        url_download = 'https://www.virustotal.com/intelligence/download/?hash=%s&apikey=%s' % \
-                              (md5, config['virustotal']['api'])
-                        try:
-                            res = requests.post(url_download)
-                        except Exception as e:
-                            self.logger.critical(str(e))
-                            raise
+                        # 각각 다운로드
+                        for md5 in md5s:
+                            self.logger.info('trying to download %s' % md5)
 
-                        # 서버저장 및 서버 저장위치 리턴
-                        path = self.__store_sftp(md5, res.content)
-                        if path:
-                            path = path.replace('\\', '/')  # 저장경로 linux_path 로 변환
-                        else:
-                            self.logger.critical('failed to store SFTP')
-                            raise IOError
+                            url_download = 'https://www.virustotal.com/intelligence/download/?hash=%s&apikey=%s' % \
+                                  (md5, config['virustotal']['api'])
+                            try:
+                                res = requests.post(url_download)
+                            except Exception as e:
+                                self.logger.critical(str(e))
+                                raise
 
-                        try:
-                            self.cur.execute(UPDATE_PATH, (path, md5))  # DB에 저장경로 업데이트
-                            self.conn.commit()
-                        except Exception as e:
-                            self.logger.critical(str(e))
-                            raise
-                        else:
-                            self.logger.info('stored \'%s\'' % md5)
+                            # 서버저장 및 서버 저장위치 리턴
+                            path = self.__store_sftp(md5, res.content)
+                            if path:
+                                path = path.replace('\\', '/')  # 저장경로 linux_path 로 변환
+                            else:
+                                self.logger.critical('failed to store SFTP')
+                                raise IOError
+
+                            try:
+                                self.cur.execute(UPDATE_PATH, (path, md5))  # DB에 저장경로 업데이트
+                                self.conn.commit()
+                            except Exception as e:
+                                self.logger.critical(str(e))
+                                raise
+                            else:
+                                self.logger.info('stored \'%s\'' % md5)
 
 
 if __name__ == '__main__':
