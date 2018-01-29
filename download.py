@@ -127,6 +127,7 @@ class VTDownloader:
 
         while True:
             # 20시 이후에만 다운로드하자
+            time.sleep(60)
             currtime = datetime.datetime.time(datetime.datetime.now())
             starttime = datetime.time(20, 0, 0, 0)
             endtime = datetime.time(23, 59, 0, 0)
