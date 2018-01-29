@@ -10,6 +10,7 @@ import io
 import errno
 import time
 import logging
+from logging.handlers import RotatingFileHandler
 import requests
 import pymysql
 import paramiko
@@ -27,8 +28,8 @@ UPDATE_PATH = 'UPDATE depot SET path=%s WHERE md5=%s'
 class VTDownloader:
 
     def __init__(self, config):
-        self.logger = logging.getLogger(config['log']['logname'])
         self.config = config
+        self.logger = self.__setup_log(config['log'])
         self.conn = None
         self.cur = None
         self.sftp = None
@@ -50,6 +51,21 @@ class VTDownloader:
         except Exception:
             self.logger.critical('SFTP connection error')
             raise
+
+    def __setup_log(self, config):
+        logger = logging.getLogger(config['logname'])
+        logger.setLevel(config['loglevel'])
+        filehandler = RotatingFileHandler(
+            config['filename'],
+            mode='a',
+            maxBytes=config['maxsize'],
+            backupCount=10
+        )
+        format = logging.Formatter(config['format'])
+        filehandler.setFormatter(format)
+        logger.addHandler(filehandler)
+
+        return logger
 
     def __conn_sftp(self, config):
         host = config['host']
