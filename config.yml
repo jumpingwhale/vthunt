@@ -15,5 +15,8 @@ sftp:
 log:
     logname: mylog
     loglevel: 20
+    maxsize: 10485760
     apikey: MY_TELEGRAM_BOT_API_KEY
+    filename: 'log/mylog.txt'
+    format: '[%(levelname)s|%(filename)s:%(lineno)s] %(asctime)s > %(message)s'
 
