@@ -16,6 +16,7 @@ import requests
 import pymysql
 import paramiko
 import yaml
+import hashlib
 
 
 # virustotal.hunt 엔 있고, depot 엔 저장되지 않은(depot.path == NULL) 샘플들만 다운로드 받는다
@@ -23,7 +24,6 @@ SELECT_SAMPLES_NOT_STORED = 'SELECT  JSON_UNQUOTE(JSON_EXTRACT(virustotal.hunt, 
                             'FROM virustotal INNER JOIN depot ' \
                             'ON virustotal.md5 = depot.md5 AND depot.path IS NULL ' \
                             'LIMIT 100'
-
 UPDATE_PATH = 'UPDATE depot SET path=%s WHERE md5=%s'
 
 
@@ -31,6 +31,7 @@ class VTDownloader:
 
     def __init__(self, config):
         self.config = config
+        self.api = config['virustotal']['api']
         self.logger = self.__setup_log(config['log'])
         self.trigger = False
         self.conn = None
@@ -150,18 +151,26 @@ class VTDownloader:
 
                         # 각각 다운로드
                         for md5 in md5s:
-                            self.logger.info('trying to download %s' % md5)
+                            self.logger.info('downloading %s' % md5)
 
-                            url_download = 'https://www.virustotal.com/intelligence/download/?hash=%s&apikey=%s' % \
-                                  (md5, config['virustotal']['api'])
                             try:
-                                res = requests.post(url_download)
-                            except Exception as e:
-                                self.logger.critical(str(e))
+                                content = self.download(md5)
+                            except FileNotFoundError:
+                                self.logger.info('no sample in virustotal %s' % md5)
+                                continue
+                            except PermissionError:
+                                self.logger.info('reached daily api limit')
                                 raise
 
+                            # 다운로드 값 검증
+                            m = hashlib.md5()
+                            m.update(content)
+                            if md5 != m.hexdigest():
+                                self.logger.critical('download content differs from md5 value in report')
+                                continue
+
                             # 서버저장 및 서버 저장위치 리턴
-                            path = self.__store_sftp(md5, res.content)
+                            path = self.__store_sftp(md5, content)
                             if path:
                                 path = path.replace('\\', '/')  # 저장경로 linux_path 로 변환
                             else:
@@ -174,8 +183,24 @@ class VTDownloader:
                             except Exception as e:
                                 self.logger.critical(str(e))
                                 raise
-                            else:
-                                self.logger.info('stored \'%s\'' % md5)
+
+    def download(self, md5):
+        url = 'https://www.virustotal.com/vtapi/v2/file/download'
+
+        # 파라미터를 설정한다
+        params = {'apikey': self.api,
+                   'hash': md5}
+
+        # 다운로드 한다
+        res = requests.get(url, params=params)
+
+        # 응답코드를 검증한다
+        if res.status_code == 404:
+            raise FileNotFoundError
+        elif res.status_code == 204:
+            raise PermissionError
+
+        return res.content
 
 
 if __name__ == '__main__':
