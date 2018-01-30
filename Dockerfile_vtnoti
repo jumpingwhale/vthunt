@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir --requirement requirements.txt
 COPY . .
 
 # 스크립트 실행
-CMD [ "python", "./vtdownload.py" ]
+CMD [ "python", "./vtnoti.py" ]
