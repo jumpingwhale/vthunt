@@ -61,7 +61,7 @@ class Store:
                 return True
             else:
                 # maximum recursion depth is usually 300
-                completed(file, size_now)
+                return completed(file, size_now)
 
         while True:
             files = glob.glob(os.path.join(self.monitor, '*'))
@@ -72,10 +72,10 @@ class Store:
 
                     # 다운로드 완료됐는지 검증
                     try:
-                        completed(os.path.getsize(f))
+                        completed(f)
                     except RecursionError:
                         self.logger.info('looks like still downloading %s' % os.path.basename(f))
-                        # 이번 루프 모두 완료하고 재시도
+                        # 이번 루프 다 끝나면 나중에 재시도
                         continue
 
                     # 파일크기 검증
@@ -142,8 +142,6 @@ class Store:
         fp = io.BytesIO(binary)
         self.sftp.putfo(fp, remote_path)
         return remote_path
-
-
 
     def __conn_sftp(self, config):
         host = config['host']
