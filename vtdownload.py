@@ -17,6 +17,7 @@ import pymysql
 import paramiko
 import yaml
 import hashlib
+from pytz import timezone
 
 
 # virustotal.hunt 엔 있고, depot 엔 저장되지 않은(depot.path == NULL) 샘플들만 다운로드 받는다
@@ -124,11 +125,16 @@ class VTDownloader:
         return remote_path
 
     def work(self):
-        self.logger.info('work() started at %s' % str(datetime.datetime.now()))
+
+        # set timezone explicit
+        tz = timezone('Asia/Seoul')
+        self.logger.info('current utc time is %s' % str(datetime.datetime.utcnow()))
+        self.logger.info('current local time is %s' % str(datetime.datetime.now(tz=tz)))
+
         while True:
             # 20시 이후에만 다운로드하자
             time.sleep(60)
-            currtime = datetime.datetime.time(datetime.datetime.now())
+            currtime = datetime.datetime.time(datetime.datetime.now(tz=tz))
             starttime = datetime.time(20, 0, 0, 0)
             endtime = datetime.time(23, 59, 0, 0)
             self.trigger = starttime < currtime < endtime
