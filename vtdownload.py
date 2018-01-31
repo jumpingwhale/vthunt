@@ -20,10 +20,9 @@ import hashlib
 
 
 # virustotal.hunt 엔 있고, depot 엔 저장되지 않은(depot.path == NULL) 샘플들만 다운로드 받는다
-SELECT_SAMPLES_NOT_STORED = 'SELECT  JSON_UNQUOTE(JSON_EXTRACT(virustotal.hunt, "$.md5")), depot.path ' \
-                            'FROM virustotal INNER JOIN depot ' \
-                            'ON virustotal.md5 = depot.md5 AND depot.path IS NULL ' \
-                            'LIMIT 100'
+SELECT_SAMPLES_NOT_STORED = 'SELECT virustotal.md5 FROM virustotal ' \
+                            'where (virustotal.hunt is not null or virustotal.report is not null) ' \
+                            'and not exists (select depot.md5 from depot where virustotal.md5=depot.md5)'
 UPDATE_PATH = 'UPDATE depot SET path=%s WHERE md5=%s'
 
 
@@ -125,7 +124,7 @@ class VTDownloader:
         return remote_path
 
     def work(self):
-
+        self.logger.info('work() started at %s' % str(datetime.datetime.now()))
         while True:
             # 20시 이후에만 다운로드하자
             time.sleep(60)
