@@ -24,7 +24,7 @@ VOLUME /usr/src/app/monitor
 # 소스코드 복사
 COPY . .
 # 스크립트 실행
-CMD [ "python", "./vtnoti.py" ]
+CMD [ "python", "./store.py" ]
 ```
 ```
 docker build -t store_sample .
@@ -97,7 +97,7 @@ RUN pip install --no-cache-dir --requirement requirements.txt
 # 소스코드 복사
 COPY . .
 # 스크립트 실행
-CMD [ "python", "./download.py" ]
+CMD [ "python", "./vtdownload.py" ]
 ```
 ```
 docker build -t vthunt_download .
