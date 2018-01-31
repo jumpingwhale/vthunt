@@ -32,7 +32,7 @@ class VTDownloader:
     def __init__(self, config):
         self.config = config
         self.api = config['virustotal']['api']
-        self.logger = self.__setup_log(config['log'])
+        self.logger = logging.getLogger(config['log']['logname'])
         self.trigger = False
         self.conn = None
         self.cur = None
@@ -55,21 +55,6 @@ class VTDownloader:
         except Exception:
             self.logger.critical('SFTP connection error')
             raise
-
-    def __setup_log(self, config):
-        logger = logging.getLogger(config['logname'])
-        logger.setLevel(config['loglevel'])
-        filehandler = RotatingFileHandler(
-            config['filename'],
-            mode='a',
-            maxBytes=config['maxsize'],
-            backupCount=10
-        )
-        format = logging.Formatter(config['format'])
-        filehandler.setFormatter(format)
-        logger.addHandler(filehandler)
-
-        return logger
 
     def __conn_sftp(self, config):
         host = config['host']
@@ -208,6 +193,22 @@ class VTDownloader:
         return res.content
 
 
+def setup_log(config):
+    logger = logging.getLogger(config['logname'])
+    logger.setLevel(config['loglevel'])
+    filehandler = RotatingFileHandler(
+        config['filename'],
+        mode='a',
+        maxBytes=config['maxsize'],
+        backupCount=10
+    )
+    format = logging.Formatter(config['format'])
+    filehandler.setFormatter(format)
+    logger.addHandler(filehandler)
+
+    return logger
+
+
 if __name__ == '__main__':
     try:
         with open("config_master.yml", 'r') as ymlfile:
@@ -215,6 +216,8 @@ if __name__ == '__main__':
     except Exception:
         with open("config.yml", 'r') as ymlfile:
             config = yaml.load(ymlfile)
+
+    setup_log(config['log'])
 
     while True:
         try:

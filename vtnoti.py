@@ -21,7 +21,7 @@ class Notification:
     def __init__(self, config):
         self.config = config
         self.api = config['virustotal']['api']
-        self.logger = self.__setup_log(config['log'])
+        self.logger = logging.getLogger(config['log']['logname'])
         self.trigger = False
         self.conn = None
         self.cur = None
@@ -42,20 +42,7 @@ class Notification:
             self.logger.critical('MySql connection error')
             raise
 
-    def __setup_log(self, config):
-        logger = logging.getLogger(config['logname'])
-        logger.setLevel(config['loglevel'])
-        filehandler = RotatingFileHandler(
-            config['filename'],
-            mode='a',
-            maxBytes=config['maxsize'],
-            backupCount=10
-        )
-        format = logging.Formatter(config['format'])
-        filehandler.setFormatter(format)
-        logger.addHandler(filehandler)
 
-        return logger
 
     def __delete_noti(self, ids):
         # virustotal 서버에서 noti 삭제
@@ -105,6 +92,22 @@ class Notification:
             time.sleep(60)
 
 
+def setup_log(config):
+    logger = logging.getLogger(config['logname'])
+    logger.setLevel(config['loglevel'])
+    filehandler = RotatingFileHandler(
+        config['filename'],
+        mode='a',
+        maxBytes=config['maxsize'],
+        backupCount=10
+    )
+    format = logging.Formatter(config['format'])
+    filehandler.setFormatter(format)
+    logger.addHandler(filehandler)
+
+    return logger
+
+
 if __name__ == '__main__':
     # 설정파일 열기
     try:
@@ -113,6 +116,8 @@ if __name__ == '__main__':
     except Exception:
         with open("config.yml", 'r') as ymlfile:
             config = yaml.load(ymlfile)
+
+    setup_log(config['log'])
 
     while True:
         try:
