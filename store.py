@@ -23,6 +23,7 @@ from pytz import timezone
 
 # virustotal.hunt 엔 있고, depot 엔 저장되지 않은(depot.path == NULL) 샘플들만 다운로드 받는다
 INSERT_NEW_SAMPLE = 'INSERT INTO depot (md5, path) VALUES (%s, %s)'
+ALREADY_UPLOADED = 'SELECT md5, path FROM depot WHERE md5=%s'
 
 
 class Store:
@@ -70,7 +71,7 @@ class Store:
                 for f in files:
                     self.logger.info('processing %s' % os.path.basename(f))
 
-                    # 다운로드 완료됐는지 검증
+                    # 다른 프로세스에서 파일을 아직 쓰고 있는지 검증
                     try:
                         completed(f)
                     except RecursionError:
@@ -84,23 +85,31 @@ class Store:
                         os.remove(f)
                         continue
 
-                    # 업로드
+                    # 파일읽기
                     with open(f, 'rb') as fp:
                         buf = fp.read()
 
-                        # 해쉬값 생성
-                        m = hashlib.md5()
-                        m.update(buf)
-                        md5 = m.hexdigest()
+                    # 해쉬값 생성
+                    m = hashlib.md5()
+                    m.update(buf)
+                    md5 = m.hexdigest()
 
-                        # 업로드
-                        remote = self.__store_sftp(md5, buf)
+                    # 중복 업로드 검증
+                    vals = (md5,)
+                    self.cur.execute(ALREADY_UPLOADED, vals)
+                    if self.cur.rowcount:
+                        self.logger.info('hash duplicated')
+                        os.remove(f)
+                        continue
 
-                        # db 인서트
-                        sql = INSERT_NEW_SAMPLE
-                        vals = (md5, remote)
-                        self.cur.execute(sql, vals)
-                        self.conn.commit()
+                    # 업로드
+                    remote = self.__store_sftp(md5, buf)
+
+                    # db 인서트
+                    sql = INSERT_NEW_SAMPLE
+                    vals = (md5, remote)
+                    self.cur.execute(sql, vals)
+                    self.conn.commit()
 
                     # 완료파일 삭제
                     os.remove(f)
