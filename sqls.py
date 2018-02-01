@@ -4,7 +4,7 @@
 sqls.py
 _________
 """
-
+SELECT_EMPTY_REPORT_SAMPLE = 'SELECT depot.md5 FROM depot INNER JOIN virustotal ON depot.md5=virustotal.md5 WHERE virustotal.report IS NULL'
 NULL_AS_JSON = 'SELECT * FROM samples.virustotal where JSON_EXTRACT(hunt, "$.ruleset_name") = CAST("null" AS JSON);'
 
 CHECK_NOTIFICATION_DUPLICATED = 'SELECT hunt FROM virustotal WHERE md5=%s'

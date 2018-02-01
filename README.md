@@ -1,5 +1,40 @@
 # HOW TO INSTALL #
 
+## vtreport.py ##
+This module crawl virustotal report and store it to local database using public API. Needs [virustotal package](https://github.com/jumpingwhale/virustotal), don't forget to copy/paste it.
+
+### Creating Docker Image ###
+```Dockerfile
+# 베이스 이미지
+FROM python:3
+# 폴더관련 작업(생성, 작업폴더설정, 외부노출)
+RUN mkdir -p /usr/src/app
+RUN mkdir -p /usr/src/app/log
+WORKDIR /usr/src/app
+VOLUME /usr/src/app/log
+# requirements.txt 이미지로 복사 및 모듈 설치
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --requirement requirements.txt
+# 소스코드 복사
+COPY . .
+# 스크립트 실행
+CMD [ "python", "./vtreport.py" ]
+```
+```
+docker build -t vthunt_vtreport .
+```
+
+### Creating Container ###
+```
+docker \
+  run \
+  -d \
+  -it \
+  --volume /volume1/docker/python/vthunt_report:/usr/src/app/log \
+  --name vthunt_vtreport_con \
+  vthunt_vtreport
+```
+
 ## store.py ##
 This module stands for storing samples to sample server from specific local directory.
 Manual upload to sample server does nothing because sample server has own database describing sample binary's location in its filesystem.
@@ -31,7 +66,6 @@ docker build -t store_sample .
 ```
 
 ### Creating Container ###
-
 ```
 docker \
   run \
