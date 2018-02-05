@@ -19,4 +19,16 @@ log:
     apikey: MY_TELEGRAM_BOT_API_KEY
     filename: 'log/mylog.txt'
     format: '[%(levelname)s|%(filename)s:%(lineno)s] %(asctime)s > %(message)s'
-
+log_smtp:
+    logname: smtplog
+    loglevel: 20
+    gmail_host: 'smtp.gmail.com'
+    gmail_port: '587'
+    fromaddr: 'my_email@gmail.com'
+    toaddrs:
+        - 'to_someone@yahoo.com'
+        - 'to_someone@outlook.com'
+    subject: 'My Awesome Subject'
+    credentials:
+        - 'gmail_id'
+        - 'gmail_passwd'

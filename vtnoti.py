@@ -4,13 +4,12 @@
 main.py
 _________
 """
+import os
 import json
 import time
-import yaml
 import requests
 import pymysql
 import logging
-from logging.handlers import RotatingFileHandler
 
 
 CHECK_NOTIFICATION_DUPLICATED = 'SELECT hunt FROM virustotal WHERE md5=%s'
@@ -21,7 +20,7 @@ class Notification:
     def __init__(self, config):
         self.config = config
         self.api = config['virustotal']['api']
-        self.logger = logging.getLogger(config['log']['logname'])
+        self.logger = logging.getLogger(__name__)
         self.trigger = False
         self.conn = None
         self.cur = None
@@ -42,8 +41,6 @@ class Notification:
             self.logger.critical('MySql connection error')
             raise
 
-
-
     def __delete_noti(self, ids):
         # virustotal 서버에서 noti 삭제
         try:
@@ -61,14 +58,12 @@ class Notification:
                 notis = content['notifications']
 
                 if notis:
-                    self.logger.info('%d notifications received' % len(notis))
+                    self.logger.info('processing %d hashes' % len(notis))
 
                     # 처리 완료된 notification id
                     complete_ids = list()
 
                     for noti in notis:  # 공지는 리스트형태
-                        self.logger.info('%s in progress' % noti['md5'])
-
                         # 완료처리할 목록에 추가
                         complete_ids.append(noti['id'])
 
@@ -76,7 +71,7 @@ class Notification:
                         vals = (noti['md5'],)
                         self.cur.execute(CHECK_NOTIFICATION_DUPLICATED, vals)
                         if self.cur.rowcount:  # 중복, 패스
-                            self.logger.info('already registered in samples.virustotal')
+                            self.logger.warning('already registered in samples.virustotal %s' % noti['md5'])
                         else:  # 신규등록해쉬
                             # DB 저장
                             vals = (json.dumps(noti), noti['md5'])
@@ -84,52 +79,36 @@ class Notification:
                                 self.cur.execute(INSERT_NOTIFICATION, vals)
                                 self.conn.commit()
                             except Exception as e:
-                                self.logger.critical('failed to insert new notification')
+                                self.logger.critical('failed to insert new notification %s' % noti['md5'])
                                 raise
+                            else:
+                                self.logger.info('%s has done' % noti['md5'])
 
                     # 완료처리 (virustotal 서버에서 noti 삭제)
                     self.__delete_noti(complete_ids)
+
             time.sleep(60)
 
 
-def setup_log(config):
-    logger = logging.getLogger(config['logname'])
-    logger.setLevel(config['loglevel'])
-    filehandler = RotatingFileHandler(
-        config['filename'],
-        mode='a',
-        maxBytes=config['maxsize'],
-        backupCount=10
-    )
-    format = logging.Formatter(config['format'])
-    filehandler.setFormatter(format)
-    logger.addHandler(filehandler)
-
-    return logger
-
-
-if __name__ == '__main__':
-    # 설정파일 열기
-    try:
-        with open("config_master.yml", 'r') as ymlfile:
-            config = yaml.load(ymlfile)
-    except Exception:
-        with open("config.yml", 'r') as ymlfile:
-            config = yaml.load(ymlfile)
-
-    setup_log(config['log'])
-
+def work(config):
+    # UTC -> 로컬타임
+    os.environ['TZ'] = 'Asia/Seoul'
+    time.tzset()
     while True:
         try:
             # 예외시 재접속
-            vt = Notification(config)
+            noti = Notification(config)
         except Exception as e:
             time.sleep(10)
             continue
         else:
             try:
                 # 작업시작
-                vt.work()
+                noti.work()
             except Exception as e:
                 time.sleep(10)
                 continue
+
+
+if __name__ == '__main__':
+    pass

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 """
-download.py
+
 _________
 """
 
@@ -117,9 +117,9 @@ class Store:
                 time.sleep(15)
 
     def __store_sftp(self, md5, binary):
-        def exists(path):
+        def exists(sftp, path):
             try:
-                self.sftp.stat(path)
+                sftp.stat(path)
             except IOError as e:
                 if e.errno == errno.ENOENT:
                     return False
@@ -134,7 +134,7 @@ class Store:
         remote_path = '/'.join([remote_dir, md5])
 
         # 폴더 없으면 생성
-        if not exists(remote_dir):
+        if not exists(self.sftp, remote_dir):
             path_to_remote_dir = root
             for prefix in prefixes:
                 path_to_remote_dir = '/'.join([path_to_remote_dir, prefix])

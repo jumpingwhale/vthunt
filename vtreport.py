@@ -1,22 +1,21 @@
-# vtreport.py
-
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+import os
 import json
 import time
 import pymysql
-import yaml
 import logging
-from logging.handlers import RotatingFileHandler
 import virustotal
 from virustotal.err import *
 
-WAIT_SUCCESS_TIME = 15
+WAIT_SUCCESS_TIME = 60
 WAIT_ERROR_TIME = 15
 
 
 class Server:
     def __init__(self, config):
         self.config = config
-        self.logger = logging.getLogger(config['log']['logname'])
+        self.logger = logging.getLogger(__name__)
         self.vt = virustotal.connect(config['virustotal']['api'], False)
         try:
             self.conn = pymysql.connect(
@@ -59,10 +58,10 @@ class Server:
                 continue
             # 대상 해시가 없으면 대기한다.
             if not hash_dicts:
-                self.logger.info("No Hashes")
+                self.logger.warning("No Hashes")
                 time.sleep(WAIT_SUCCESS_TIME)
                 continue
-            self.logger.info("Work on " + str(len(hash_dicts)) + ' hashes')
+            self.logger.info("processing %d hashes" % len(hash_dicts))
             # 받아온 해시 목록을 이용해 레포트를 받아온다.
             for hash_dict in hash_dicts:
                 try:
@@ -87,32 +86,10 @@ class Server:
             time.sleep(WAIT_SUCCESS_TIME)
 
 
-def setup_log(config):
-    logger = logging.getLogger(config['logname'])
-    logger.setLevel(config['loglevel'])
-    filehandler = RotatingFileHandler(
-        config['filename'],
-        mode='a',
-        maxBytes=config['maxsize'],
-        backupCount=10
-    )
-    format = logging.Formatter(config['format'])
-    filehandler.setFormatter(format)
-    logger.addHandler(filehandler)
-
-    return logger
-
-
-if __name__ == '__main__':
-    # 설정파일 열기
-    try:
-        with open("config_master.yml", 'r') as ymlfile:
-            config = yaml.load(ymlfile)
-    except:
-        with open("config.yml", 'r') as ymlfile:
-            config = yaml.load(ymlfile)
-
-    setup_log(config['log'])
+def work(config):
+    # UTC -> 로컬타임
+    os.environ['TZ'] = 'Asia/Seoul'
+    time.tzset()
 
     while True:
         try:
@@ -126,3 +103,7 @@ if __name__ == '__main__':
             except:
                 time.sleep(WAIT_ERROR_TIME)
                 continue
+
+
+if __name__ == '__main__':
+    pass

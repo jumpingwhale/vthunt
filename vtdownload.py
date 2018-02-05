@@ -1,23 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 """
-download.py
+
 _________
 """
-
 import os
 import io
 import errno
 import time
 import datetime
 import logging
-from logging.handlers import RotatingFileHandler
 import requests
 import pymysql
 import paramiko
-import yaml
 import hashlib
-from pytz import timezone
 
 
 # virustotal.hunt 엔 있고, depot 엔 저장되지 않은(depot.path == NULL) 샘플들만 다운로드 받는다
@@ -32,7 +28,7 @@ class VTDownloader:
     def __init__(self, config):
         self.config = config
         self.api = config['virustotal']['api']
-        self.logger = logging.getLogger(config['log']['logname'])
+        self.logger = logging.getLogger(__name__)
         self.trigger = False
         self.conn = None
         self.cur = None
@@ -110,16 +106,10 @@ class VTDownloader:
         return remote_path
 
     def work(self):
-
-        # set timezone explicit
-        tz = timezone('Asia/Seoul')
-        self.logger.info('current utc time is %s' % str(datetime.datetime.utcnow()))
-        self.logger.info('current local time is %s' % str(datetime.datetime.now(tz=tz)))
-
         while True:
             # 20시 이후에만 다운로드하자
             time.sleep(60)
-            currtime = datetime.datetime.time(datetime.datetime.now(tz=tz))
+            currtime = datetime.datetime.time(datetime.datetime.now())
             starttime = datetime.time(20, 0, 0, 0)
             endtime = datetime.time(23, 59, 0, 0)
             self.trigger = starttime < currtime < endtime
@@ -138,11 +128,10 @@ class VTDownloader:
 
                         # 미다운로드 md5 확보
                         md5s = [row[0].lower() for row in self.cur.fetchall()]
+                        self.logger.info("processing %d hashes" % len(md5s))
 
                         # 각각 다운로드
                         for md5 in md5s:
-                            self.logger.info('downloading %s' % md5)
-
                             try:
                                 content = self.download(md5)
                             except FileNotFoundError:
@@ -155,8 +144,9 @@ class VTDownloader:
                             # 다운로드 값 검증
                             m = hashlib.md5()
                             m.update(content)
-                            if md5 != m.hexdigest():
-                                self.logger.critical('download content differs from md5 value in report')
+                            md5_new = m.hexdigest()
+                            if md5 != md5_new:
+                                self.logger.warning('download content mismatch %s : %s' % (md5, md5_new))
                                 continue
 
                             # 서버저장 및 서버 저장위치 리턴
@@ -164,7 +154,7 @@ class VTDownloader:
                             if path:
                                 path = path.replace('\\', '/')  # 저장경로 linux_path 로 변환
                             else:
-                                self.logger.critical('failed to store SFTP')
+                                self.logger.critical('failed to store %s  SFTP' % md5)
                                 raise IOError
 
                             try:
@@ -173,6 +163,8 @@ class VTDownloader:
                             except Exception as e:
                                 self.logger.critical(str(e))
                                 raise
+
+                            self.logger.info('%s download complete' % md5)
 
     def download(self, md5):
         url = 'https://www.virustotal.com/vtapi/v2/file/download'
@@ -193,31 +185,10 @@ class VTDownloader:
         return res.content
 
 
-def setup_log(config):
-    logger = logging.getLogger(config['logname'])
-    logger.setLevel(config['loglevel'])
-    filehandler = RotatingFileHandler(
-        config['filename'],
-        mode='a',
-        maxBytes=config['maxsize'],
-        backupCount=10
-    )
-    format = logging.Formatter(config['format'])
-    filehandler.setFormatter(format)
-    logger.addHandler(filehandler)
-
-    return logger
-
-
-if __name__ == '__main__':
-    try:
-        with open("config_master.yml", 'r') as ymlfile:
-            config = yaml.load(ymlfile)
-    except Exception:
-        with open("config.yml", 'r') as ymlfile:
-            config = yaml.load(ymlfile)
-
-    setup_log(config['log'])
+def work(config):
+    # UTC -> 로컬타임
+    os.environ['TZ'] = 'Asia/Seoul'
+    time.tzset()
 
     while True:
         try:
@@ -230,6 +201,12 @@ if __name__ == '__main__':
             try:
                 # 작업시작
                 vt.work()
+            except PermissionError:
+                time.sleep(600)
             except Exception as e:
                 time.sleep(10)
                 continue
+
+
+if __name__ == '__main__':
+    pass
