@@ -16,7 +16,7 @@ class Server:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        self.vt = virustotal.connect(config['virustotal']['api'], False)
+        self.vt = virustotal.connect(config['virustotal']['public'], False)
         try:
             self.conn = pymysql.connect(
                 host=config['mysql']['host'],
