@@ -12,13 +12,11 @@ import time
 import datetime
 import logging
 from logging.handlers import RotatingFileHandler
-import requests
 import pymysql
 import paramiko
 import yaml
-import glob
 import hashlib
-from pytz import timezone
+from scandir import scandir
 
 
 # virustotal.hunt 엔 있고, depot 엔 저장되지 않은(depot.path == NULL) 샘플들만 다운로드 받는다
@@ -30,7 +28,7 @@ class Store:
     def __init__(self, config):
         self.config = config
         self.api = config['virustotal']['api']
-        self.logger = logging.getLogger(config['log']['logname'])
+        self.logger = logging.getLogger(config['module_log']['logname'])
         self.conn = None
         self.cur = None
         self.sftp = None
@@ -55,38 +53,36 @@ class Store:
             raise
 
     def work(self):
-        def completed(file, size_before=0):
-            time.sleep(3)
-            size_now = os.path.getsize(file)
-            if size_now == size_before:
-                return True
-            else:
-                # maximum recursion depth is usually 300
-                return completed(file, size_now)
+        # UTC -> 로컬타임
+        os.environ['TZ'] = 'Asia/Seoul'
+        time.tzset()  # unix only
 
         while True:
-            files = glob.glob(os.path.join(self.monitor, '*'))
-            if len(files):
-                self.logger.info('%d files queued' % len(files))
-                for f in files:
-                    self.logger.info('processing %s' % os.path.basename(f))
+            # 리소스소모 방지
+            time.sleep(self.config['store']['scandelay'])
 
-                    # 다른 프로세스에서 파일을 아직 쓰고 있는지 검증
-                    try:
-                        completed(f)
-                    except RecursionError:
-                        self.logger.info('looks like still downloading %s' % os.path.basename(f))
-                        # 이번 루프 다 끝나면 나중에 재시도
-                        continue
+            for entry in scandir(self.monitor):  # 모든 파일목록을 한번에 로드하는걸 방지
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                filename = entry.name  # 파일 이름
+                fullpath = entry.path  # 파일 경로
+
+                currtime = datetime.datetime.now()  # 현재시각
+                mtime = datetime.datetime.fromtimestamp(os.path.getmtime(fullpath))  # 마지막 수정시각
+                delta = currtime - mtime  # 마지막 수정부터 현재까지 시간
+
+                # 수정한지 n초가 넘었으면(다운로드가 끝났으면)
+                if datetime.timedelta(seconds=self.config['store']['timedelta']) < delta:
+                    self.logger.info('processing %s' % os.path.basename(filename))
 
                     # 파일크기 검증
-                    if os.path.getsize(f) > 1024 * 1024 * 40:  # 40MB 이상 스킵
-                        self.logger.info('file size is too big %d' % os.path.getsize(f))
-                        os.remove(f)
+                    if os.path.getsize(fullpath) > 1024 * 1024 * 40:  # 40MB 이상 스킵
+                        self.logger.warning('file size is too big %d' % os.path.getsize(filename))
+                        os.remove(fullpath)
                         continue
 
                     # 파일읽기
-                    with open(f, 'rb') as fp:
+                    with open(fullpath, 'rb') as fp:
                         buf = fp.read()
 
                     # 해쉬값 생성
@@ -98,8 +94,8 @@ class Store:
                     vals = (md5,)
                     self.cur.execute(ALREADY_UPLOADED, vals)
                     if self.cur.rowcount:
-                        self.logger.info('hash duplicated')
-                        os.remove(f)
+                        self.logger.warning('hash duplicated')
+                        os.remove(fullpath)
                         continue
 
                     # 업로드
@@ -112,9 +108,7 @@ class Store:
                     self.conn.commit()
 
                     # 완료파일 삭제
-                    os.remove(f)
-            else:
-                time.sleep(15)
+                    os.remove(fullpath)
 
     def __store_sftp(self, md5, binary):
         def exists(sftp, path):
@@ -144,7 +138,7 @@ class Store:
                     pass
 
         # 이미 파일 있으면 삭제
-        if exists(remote_path):
+        if exists(self.sftp, remote_path):
             self.sftp.remove(remote_path)
 
         # 업로드
@@ -174,10 +168,11 @@ class Store:
 def setup_log(config):
     logger = logging.getLogger(config['logname'])
     logger.setLevel(config['loglevel'])
+    filename = os.path.join(config['path'], config['logname'] + '.log')
     filehandler = RotatingFileHandler(
-        config['filename'],
+        filename,
         mode='a',
-        maxBytes=config['maxsize'],
+        maxBytes=1024*1024*5,
         backupCount=10
     )
     format = logging.Formatter(config['format'])
@@ -195,7 +190,7 @@ if __name__ == '__main__':
         with open("config.yml", 'r') as ymlfile:
             config = yaml.load(ymlfile)
 
-    setup_log(config['log'])
+    setup_log(config['module_log'])
 
     while True:
         try:

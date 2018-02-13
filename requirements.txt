@@ -5,3 +5,4 @@ telepot
 paramiko
 pytz
 APScheduler
+scandir

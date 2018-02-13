@@ -117,7 +117,7 @@ if __name__ == '__main__':
 
     sched = BlockingScheduler()
 
-    @sched.scheduled_job('cron', id='my_job_id', hour=9, minute=10, second=0)
+    @sched.scheduled_job('cron', id='my_job_id', hour=9, minute=30, second=0)
     def send_email():
         result = dict()
 
@@ -138,4 +138,3 @@ if __name__ == '__main__':
         smtp_logger.info(msg)
 
     sched.start()
-
