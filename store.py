@@ -82,7 +82,7 @@ class Store:
 
                     # 파일크기 검증
                     if os.path.getsize(fullpath) > 1024 * 1024 * 40:  # 40MB 이상 스킵
-                        self.logger.warning('file size is too big %d' % os.path.getsize(filename))
+                        self.logger.warning('file size is too big %d' % os.path.getsize(fullpath))
                         os.remove(fullpath)
                         continue
 
