@@ -30,6 +30,10 @@ class Server:
             self.logger.critical('MySql connection error')
             raise
 
+    def __del__(self):
+        self.cur.close()
+        self.conn.close()
+
     # 대상 해시를 가져옴
     def query_db(self):
         sql = 'select depot.md5 from depot inner join virustotal on depot.md5=virustotal.md5 where virustotal.report is null;'

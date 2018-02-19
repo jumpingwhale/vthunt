@@ -41,6 +41,10 @@ class Notification:
             self.logger.critical('MySql connection error')
             raise
 
+    def __del__(self):
+        self.cur.close()
+        self.conn.close()
+
     def __delete_noti(self, ids):
         # virustotal 서버에서 noti 삭제
         try:

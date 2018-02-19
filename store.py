@@ -52,6 +52,11 @@ class Store:
             self.logger.critical('SFTP connection error')
             raise
 
+    def __del__(self):
+        self.sftp.close()
+        self.cur.close()
+        self.conn.close()
+
     def work(self):
         # UTC -> 로컬타임
         os.environ['TZ'] = 'Asia/Seoul'

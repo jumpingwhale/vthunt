@@ -52,6 +52,11 @@ class VTDownloader:
             self.logger.critical('SFTP connection error')
             raise
 
+    def __del__(self):
+        self.sftp.close()
+        self.cur.close()
+        self.conn.close()
+
     def __conn_sftp(self, config):
         host = config['host']
         port = config['port']
