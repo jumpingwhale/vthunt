@@ -119,8 +119,6 @@ class VTDownloader:
             starttime = datetime.time(20, 0, 0, 0)
             endtime = datetime.time(23, 59, 0, 0)
 
-            self.logger.info('curr time : %s' % currtime)
-
             self.trigger = starttime < currtime < endtime
 
             if self.trigger:
@@ -148,6 +146,7 @@ class VTDownloader:
                                 continue
                             except PermissionError:
                                 self.logger.info('reached daily api limit')
+                                time.sleep(3600)
                                 raise
 
                             # 다운로드 값 검증
